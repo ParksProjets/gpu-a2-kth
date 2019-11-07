@@ -1,6 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstddef>
 #include <cuda.h>
+#include <omp.h>
 
 #include <iostream>
 #include <chrono>
