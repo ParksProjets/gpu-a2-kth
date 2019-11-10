@@ -11,18 +11,22 @@ import sys
 # Benchmark data.
 NUM_PARTICULES = [
     100, 1000, 5000, 10000, 50000, 100000, 500000,
-    1000000, 10000000
+    1000000, 2500000, 4000000, 6000000, 8000000,
+    10000000
 ]
 
+BLOCK_SIZES = [16, 32, 64, 80, 100, 128, 192, 256]
 NUM_ITERATIONS = 1000
-BLOCK_SIZES = [16, 32, 64, 128, 256]
+
+NUM_RUNS = 3
+
 
 # Regex for matching time.
 RE_TIME = re.compile(r"^[GC]PU time: ([0-9]+) ms", re.M)
 
 
-def run(num_particules, block_size, kind):
-    "Run the benchmark."
+def run_ps(num_particules, block_size, kind):
+    "Run the process and return the time."
 
     args = [num_particules, NUM_ITERATIONS, block_size, kind]
     args = [str(v) for v in args]
@@ -30,7 +34,14 @@ def run(num_particules, block_size, kind):
     ps = sp.Popen(["./exercise_3", *args], stdout=sp.PIPE)
 
     out, _ = ps.communicate()
-    return RE_TIME.search(out.decode()).group(1)
+    return int(RE_TIME.search(out.decode()).group(1))
+
+
+def run(*args):
+    "Run the benchmark."
+
+    value = sum(run_ps(*args) for _ in range(NUM_RUNS))
+    return round(value / NUM_RUNS)
 
 
 def CPU_benchmark(writer):
@@ -45,11 +56,11 @@ def CPU_benchmark(writer):
 def GPU_benchmark(writer):
     "Run a benchmark on GPU."
 
-    writer.writerow(["Num. particules", "Block size", "Time (ms)"])
-    for np in NUM_PARTICULES:
-        for bs in BLOCK_SIZES:
-            print("Running GPU bench (np=%d, bs=%d)" % (np, bs))
-            writer.writerow([np, bs, run(np, bs, "gpu")])
+    writer.writerow(["Block size", "Num. particules", "Time (ms)"])
+    for bs in BLOCK_SIZES:
+        for np in NUM_PARTICULES:
+            print("Running GPU bench (bs=%d, np=%d)" % (bs, np))
+            writer.writerow([bs, np, run(np, bs, "gpu")])
 
 
 def run_benchmark(filename, func):
@@ -63,7 +74,7 @@ def run_benchmark(filename, func):
 def main():
     "Entry point of this program."
 
-    run_benchmark("cpu.csv", CPU_benchmark)
+    # run_benchmark("cpu.csv", CPU_benchmark)
     run_benchmark("gpu.csv", GPU_benchmark)
 
 

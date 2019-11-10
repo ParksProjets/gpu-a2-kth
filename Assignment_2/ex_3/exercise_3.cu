@@ -71,13 +71,14 @@ __global__ void GpuUpdate(Particle *particules, int NUM_PARTICLES, float3 dvel)
 // Make all iterations on GPU.
 void GpuInterations(Particle *array, float3 dvel)
 {
-    printf("\nStarting GPU test ...\n");
-    auto start = std::chrono::system_clock::now();
-
     int num_blocks = (NUM_PARTICLES + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     Particle *gpuarray;
     CUDA_CHECK(cudaMalloc(&gpuarray, sizeof(Particle) * NUM_PARTICLES));
+
+    printf("\nStarting GPU test ...\n");
+    auto start = std::chrono::system_clock::now();
+
     CUDA_CHECK(cudaMemcpy(gpuarray, array, sizeof(Particle) * NUM_PARTICLES, cudaMemcpyHostToDevice));
 
     for (int i = 0; i < NUM_ITERATIONS; i++) {
@@ -86,11 +87,12 @@ void GpuInterations(Particle *array, float3 dvel)
     }
 
     CUDA_CHECK(cudaMemcpy(array, gpuarray,  sizeof(Particle) * NUM_PARTICLES, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaFree(gpuarray));
 
     auto end = std::chrono::system_clock::now();
     int ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     printf("GPU time: %d ms\n\n", ms);
+
+    CUDA_CHECK(cudaFree(gpuarray));
 }
 
 

@@ -1,8 +1,9 @@
 NVCC ?= nvcc
-ARCH ?= sm_50
 
 ifeq ($(MAKECMDGOALS),pdc)
-  ARCH = sm_30
+  ARCH ?= sm_37
+else
+  ARCH ?= sm_50
 endif
 
 
@@ -19,4 +20,4 @@ pdc: exercise_3 benchmark.py
 	cp $^ /cfs/klemming/nobackup/$(shell expr substr $(USER) 1 1)/$(USER)
 
 clean:
-	rm exercise_3
+	rm -f exercise_3

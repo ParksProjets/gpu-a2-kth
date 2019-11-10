@@ -1,11 +1,30 @@
 NVCC ?= nvcc
-ARCH ?= sm_50
+GCC ?= g++
 
-CCFLAGS += -g -Og
-CCFLAGS += -arch=$(ARCH) -I/usr/local/cuda/samples/common/inc
+ifeq ($(MAKECMDGOALS),pdc)
+  ARCH ?= sm_37
+else
+  ARCH ?= sm_50
+endif
 
-exercice_2:
-	$(NVCC) -o $@ $(CCFLAGS) $<
+
+CCFLAGS += -g
+NVCCFLAGS += -arch=$(ARCH) -I/usr/local/cuda/samples/common/inc
+
+.PHONY: all pdc clean
+
+
+all: exercise_2 exercise_2_openmp
+
+exercise_2: exercise_2.cu
+	$(NVCC) -o $@ $(CCFLAGS) $(NVCCFLAGS) $<
+
+exercise_2_openmp: exercise_2_openmp.cc
+	$(GCC) -fopenmp -o $@ $(CCFLAGS) $<
+
+
+pdc: exercise_2 exercise_2_openmp benchmark.py
+	cp $^ /cfs/klemming/nobackup/$(shell expr substr $(USER) 1 1)/$(USER)
 
 clean:
-	rm exercice_2
+	rm -f exercise_2 exercise_2_openmp
