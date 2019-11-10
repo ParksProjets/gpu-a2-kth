@@ -14,10 +14,15 @@ struct Particle {
     float3 velocity;
 };
 
+// Kind of benchmark to do.
+enum BenchKind { kBoth, kOnlyCPU, kOnlyGPU };
 
+
+// Generate a random number between in range [a, b].
 #define RAND_FLOAT(a,b) (a + (float)rand() / RAND_MAX * (b-a))
 
-#define CUDA_CHECK(err) if (err != cudaSuccess) { \
+// Check if the given command has returned an error.
+#define CUDA_CHECK(cmd) if ((cmd) != cudaSuccess) { \
     printf("ERROR: cuda error at line %d\n", __LINE__); abort(); }
 
 
@@ -44,9 +49,9 @@ Particle *CreateParticuleArray()
 // Update a particule by one single step.
 __host__ __device__ void UpdateParticule(Particle &particule, const float3 &dvel)
 {
-    particule.velocity.x *= dvel.x;
-    particule.velocity.y *= dvel.y;
-    particule.velocity.z *= dvel.z;
+    particule.velocity.x += dvel.x;
+    particule.velocity.y += dvel.y;
+    particule.velocity.z += dvel.z;
 
     particule.position.x += particule.velocity.x;
     particule.position.y += particule.velocity.y;
@@ -54,6 +59,7 @@ __host__ __device__ void UpdateParticule(Particle &particule, const float3 &dvel
 }
 
 
+// GPU kernel for updating a particule by one single step.
 __global__ void GpuUpdate(Particle *particules, int NUM_PARTICLES, float3 dvel)
 {
     auto index = blockDim.x * blockIdx.x + threadIdx.x;
@@ -62,6 +68,7 @@ __global__ void GpuUpdate(Particle *particules, int NUM_PARTICLES, float3 dvel)
 }
 
 
+// Make all iterations on GPU.
 void GpuInterations(Particle *array, float3 dvel)
 {
     printf("\nStarting GPU test ...\n");
@@ -74,8 +81,8 @@ void GpuInterations(Particle *array, float3 dvel)
     CUDA_CHECK(cudaMemcpy(gpuarray, array, sizeof(Particle) * NUM_PARTICLES, cudaMemcpyHostToDevice));
 
     for (int i = 0; i < NUM_ITERATIONS; i++) {
-        GpuUpdate<<<num_blocks, BLOCK_SIZE>>>(gpuarray, NUM_PARTICLES, make_float3(-1.f, 4.45f, 8.4f));
-        // cudaDeviceSynchronize();  // Make sure the particules were updated.
+        GpuUpdate<<<num_blocks, BLOCK_SIZE>>>(gpuarray, NUM_PARTICLES, dvel);
+        cudaDeviceSynchronize();  // Make sure the particules were updated.
     }
 
     CUDA_CHECK(cudaMemcpy(array, gpuarray,  sizeof(Particle) * NUM_PARTICLES, cudaMemcpyDeviceToHost));
@@ -87,6 +94,7 @@ void GpuInterations(Particle *array, float3 dvel)
 }
 
 
+// Make all iterations on CPU.
 void CpuInterations(Particle *particules, float3 dvel)
 {
     printf("\nStarting CPU test ...\n");
@@ -103,12 +111,12 @@ void CpuInterations(Particle *particules, float3 dvel)
 }
 
 
-
+// Entry point of this program.
 int main(int argc, const char **argv)
 {
     // When the program is ran with -h, show usage.
     if (argc == 2 && !strcmp(argv[1], "-h")) {
-        printf("Usage: ./exercise_3 [num particules] [num iterations] [block size]\n");
+        printf("Usage: ./exercise_3 [num particules] [num iterations] [block size] [kind]\n");
         exit(0);
     }
 
@@ -117,23 +125,28 @@ int main(int argc, const char **argv)
     if (argc >= 3) NUM_ITERATIONS = atoi(argv[2]);
     if (argc >= 4) BLOCK_SIZE     = atoi(argv[3]);
 
+    BenchKind kind = kBoth;
+    if (argc >= 5 && !strcmp(argv[4], "cpu")) kind = kOnlyCPU;
+    if (argc >= 5 && !strcmp(argv[4], "gpu")) kind = kOnlyGPU;
+
 
     // Velocity increment on each step.
     float3 dvel = make_float3(-1.f, 3.45f, 7.3f);
 
     // Run iterations on CPU.
     Particle *cpuarray = CreateParticuleArray();
-    CpuInterations(cpuarray, dvel);
+    if (kind != kOnlyGPU)
+        CpuInterations(cpuarray, dvel);
 
     // Run iterations on GPU.
     Particle *gpuarray = CreateParticuleArray();
-    GpuInterations(gpuarray, dvel);
+    if (kind != kOnlyCPU)
+        GpuInterations(gpuarray, dvel);
 
 
     // Make sure that the two particule arrays are the same.
-    if (memcmp(cpuarray, gpuarray, sizeof(Particle) * NUM_PARTICLES)) {
+    if (kind == kBoth && memcmp(cpuarray, gpuarray, sizeof(Particle) * NUM_PARTICLES)) {
         printf("ERROR: particule arrays are differents!\n\n");
         exit(1);
     }
 }
-
