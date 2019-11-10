@@ -1,4 +1,4 @@
 # DD2360HT191
 
-Guillaume GONNET, Mathieux GANNE  
+Guillaume GONNET, Matthieu GANNE  
 Group 7
