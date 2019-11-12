@@ -74,7 +74,7 @@ def run_benchmark(filename, func):
 def main():
     "Entry point of this program."
 
-    # run_benchmark("cpu.csv", CPU_benchmark)
+    run_benchmark("cpu.csv", CPU_benchmark)
     run_benchmark("gpu.csv", GPU_benchmark)
 
 

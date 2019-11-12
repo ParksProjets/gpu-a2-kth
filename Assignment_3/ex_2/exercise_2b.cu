@@ -27,7 +27,9 @@ struct Particle {
 Particle *CreateParticuleArray()
 {
     srand(42);
-    Particle *array = (Particle *)malloc(sizeof(Particle) * NUM_PARTICLES);
+
+    Particle *array;
+    CUDA_CHECK(cudaMallocManaged(&array, sizeof(Particle) * NUM_PARTICLES));
 
     for (int index = 0; index < NUM_PARTICLES; index++) {
         array[index].velocity.x = RAND_FLOAT(1, 10);
@@ -66,17 +68,13 @@ __global__ void GpuUpdate(Particle *particules, int NUM_PARTICLES, float3 dvel)
 
 
 // Make all iterations on GPU.
-void GpuInterations(Particle *array, Particle *gpuarray, float3 dvel)
+void GpuInterations(Particle *array, float3 dvel)
 {
     int num_blocks = (NUM_PARTICLES + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     for (int i = 0; i < NUM_ITERATIONS; i++) {
-        CUDA_CHECK(cudaMemcpy(gpuarray, array, sizeof(Particle) * NUM_PARTICLES, cudaMemcpyHostToDevice));
-
-        GpuUpdate<<<num_blocks, BLOCK_SIZE>>>(gpuarray, NUM_PARTICLES, dvel);
+        GpuUpdate<<<num_blocks, BLOCK_SIZE>>>(array, NUM_PARTICLES, dvel);
         cudaDeviceSynchronize();  // Make sure the particules were updated.
-
-        CUDA_CHECK(cudaMemcpy(array, gpuarray,  sizeof(Particle) * NUM_PARTICLES, cudaMemcpyDeviceToHost));
     }
 }
 
@@ -100,14 +98,12 @@ int main(int argc, const char **argv)
 
 
     // Run iterations on GPU.
-    Particle *gpuarray;
     Particle *array = CreateParticuleArray();
-    CUDA_CHECK(cudaMalloc(&gpuarray, sizeof(Particle) * NUM_PARTICLES));
 
     printf("\nStarting GPU test ...\n");
     auto start = std::chrono::system_clock::now();
 
-    GpuInterations(array, gpuarray, dvel);
+    GpuInterations(array, dvel);
 
     auto end = std::chrono::system_clock::now();
     int ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
