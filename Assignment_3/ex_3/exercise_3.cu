@@ -19,7 +19,7 @@ dim3 block(TILE_SIZE, TILE_SIZE);
 /* from cuda samples */
 void checkGpuError(cudaError_t result, char const *const func, const char *const file, int const line) {
         if(result!=cudaSuccess) { \
-                fprintf(stderr, "Cuda failure %s:%d: '%s'\n",__FILE__,__LINE__,cudaGetErrorString(result));
+                fprintf(stderr, "Cuda failure %s:%d: '%s'\n",file,line,cudaGetErrorString(result));
                 exit(1);
         }
 }
@@ -132,7 +132,8 @@ void shared_sgemm_kernel(float *C, float *A, float *B, long size)
 	const long row = blockIdx.y * blockDim.y + threadIdx.y;
 	float val = 0.0;
 
-	/* TODO declare shared memory with size TILE_SIZE x TILE_SIZE */
+	__shared__ float tile_A[TILE_SIZE][TILE_SIZE];
+	__shared__ float tile_B[TILE_SIZE][TILE_SIZE];
 
 	if (col < size && row < size) {
 		const long local_col = blockIdx.x * TILE_SIZE + threadIdx.x;
@@ -142,10 +143,10 @@ void shared_sgemm_kernel(float *C, float *A, float *B, long size)
 			tile_A[threadIdx.y][threadIdx.x] = A[local_row * size + (m * TILE_SIZE + threadIdx.x)];
 			tile_B[threadIdx.y][threadIdx.x] = B[(m * TILE_SIZE + threadIdx.y) * size + local_col];
 			__syncthreads();
-	
-			/* TODO introduce a pragma directive that can potentially improve performance here */
+
+			#pragma unroll
 			for (long k = 0; k < TILE_SIZE; ++k) {
-				/* TODO Perform multiplication here */
+				val += tile_A[threadIdx.y][k] * tile_B[k][threadIdx.x];
 			}
 			__syncthreads();
 		}
@@ -178,8 +179,11 @@ void cublas_sgemm(float *C, float *A, float *B, long size)
 	cublasCreate(&handle);
 
 	gettimeofday(&t0, NULL);
-	/* TODO fill in the blanks, do C = BA instead of C = AB */
-	cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, , , , , , , , , , , );
+	cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+		size /* m */, size /* n */, size /* k */,
+		&alpha, B, size /* lda */, A, size /* ldb */,
+		&beta, C, size /* ldc */);
+
 	checkCudaErrors(cudaDeviceSynchronize());
 	gettimeofday(&t1, NULL);
 	cublasDestroy(handle);
@@ -263,8 +267,7 @@ int main(int argc, char *argv[])
 	if (verify) {
 		checkCudaErrors(cudaMemcpy(C_result, d_C, sizeof(float)*size*size, cudaMemcpyDeviceToHost));
 		compare_matrix(C_result, C_truth, size, THRESHOLD);
-	}
-	else {
+	} else {
 		checkCudaErrors(cudaMemcpy(C_truth, d_C, sizeof(float)*size*size, cudaMemcpyDeviceToHost));
 	}
 

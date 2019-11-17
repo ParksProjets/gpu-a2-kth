@@ -7,6 +7,9 @@ int NUM_PARTICLES  = 10000;
 int NUM_ITERATIONS = 1000;
 int BLOCK_SIZE     = 32;
 
+// Whether to use `cudaMallocHost` or not.
+#define USE_CUDA_MALLOC 1
+
 
 // Data of a single particule.
 struct Particle {
@@ -27,7 +30,13 @@ struct Particle {
 Particle *CreateParticuleArray()
 {
     srand(42);
+
+#if USE_CUDA_MALLOC
+    Particle *array;
+    cudaMallocHost(&array, sizeof(Particle) * NUM_PARTICLES);
+#else
     Particle *array = (Particle *)malloc(sizeof(Particle) * NUM_PARTICLES);
+#endif
 
     for (int index = 0; index < NUM_PARTICLES; index++) {
         array[index].velocity.x = RAND_FLOAT(1, 10);

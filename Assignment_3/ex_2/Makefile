@@ -22,8 +22,8 @@ exercise_2b: exercise_2b.cu
 	$(NVCC) -o $@ $(CCFLAGS) $<
 
 
-pdc: exercise_2a
+pdc: exercise_2a exercise_2b
 	cp $^ /cfs/klemming/nobackup/$(shell expr substr $(USER) 1 1)/$(USER)
 
 clean:
-	rm -f exercise_2a
+	rm -f exercise_2a exercise_2b
