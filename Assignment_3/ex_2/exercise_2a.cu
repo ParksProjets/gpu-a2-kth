@@ -33,7 +33,7 @@ Particle *CreateParticuleArray()
 
 #if USE_CUDA_MALLOC
     Particle *array;
-    cudaMallocHost(&array, sizeof(Particle) * NUM_PARTICLES);
+    CUDA_CHECK(cudaMallocHost(&array, sizeof(Particle) * NUM_PARTICLES));
 #else
     Particle *array = (Particle *)malloc(sizeof(Particle) * NUM_PARTICLES);
 #endif
