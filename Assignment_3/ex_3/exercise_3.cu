@@ -16,7 +16,7 @@
 dim3 grid(1);
 dim3 block(TILE_SIZE, TILE_SIZE);
 
-/* from cuda samples */
+/* from cuda samples  */
 void checkGpuError(cudaError_t result, char const *const func, const char *const file, int const line) {
         if(result!=cudaSuccess) { \
                 fprintf(stderr, "Cuda failure %s:%d: '%s'\n",file,line,cudaGetErrorString(result));
