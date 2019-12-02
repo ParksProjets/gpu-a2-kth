@@ -213,9 +213,9 @@ void semi_discrete_step( double *state_init , double *state_forcing , double *st
   }
 
   //Apply the tendencies to the fluid state
-  #pragma acc parallel loop
-    copy(state_out[hs*(1+nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    copy(state_init[hs*(1+nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
+  #pragma acc parallel loop                               \
+    copy(state_out[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])     \
+    copy(state_init[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])    \
     copy(tend[0 : NUM_VARS*nz*nx])
 
   for (ll=0; ll<NUM_VARS; ll++) {
@@ -243,18 +243,20 @@ void compute_tendencies_x( double *state , double *flux , double *tend ) {
   hv_coef = -hv_beta * dx / (16*dt);
 
   //Compute fluxes in the x-direction for each cell
-  #pragma acc parallel loop
-    copy(state[hs*(nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
+  #pragma acc parallel loop                             \
+    copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])       \
+    copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])              \
+    copy(hy_dens_cell[0 : nz+2*hs])                     \
+    copy(hy_dens_theta_cell[0 : nz+2*hs])               \
+    private(stencil, d3_vals, vals)
   for (k=0; k<nz; k++) {
     #pragma acc loop
     for (i=0; i<nx+1; i++) {
-      //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
 
-      // This loop need to be caclulated completely before running the following code.
-      // TODO.
-      // #pragma acc parallel loop
+      //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
+      #pragma acc loop
       for (ll=0; ll<NUM_VARS; ll++) {
+        #pragma acc loop
         for (s=0; s < sten_size; s++) {
           inds = ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + i+s;
           stencil[s] = state[inds];
@@ -281,8 +283,8 @@ void compute_tendencies_x( double *state , double *flux , double *tend ) {
   }
 
   //Use the fluxes to compute tendencies for each cell
-  #pragma acc parallel loop
-    copy(tend[0 : NUM_VARS*nz*nx])
+  #pragma acc parallel loop                     \
+    copy(tend[0 : NUM_VARS*nz*nx])              \
     copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
   for (ll=0; ll<NUM_VARS; ll++) {
     #pragma acc loop
@@ -310,18 +312,20 @@ void compute_tendencies_z( double *state , double *flux , double *tend ) {
   hv_coef = -hv_beta * dx / (16*dt);
 
   //Compute fluxes in the x-direction for each cell
-  #pragma acc parallel loop
-    copy(state[hs*(nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
-    copy(tend[0 : NUM_VARS*nz*nx])
+  #pragma acc parallel loop                           \
+    copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])     \
+    copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])            \
+    copy(hy_dens_theta_int[0 : nz+1])                 \
+    copy(hy_pressure_int[0 : nz+1])                   \
+    private(stencil, d3_vals, vals)
   for (k=0; k<nz+1; k++) {
     #pragma acc loop
     for (i=0; i<nx; i++) {
       //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
 
-      // TODO.
-      // #pragma acc parallel loop
+      #pragma acc loop
       for (ll=0; ll<NUM_VARS; ll++) {
+        #pragma acc loop
         for (s=0; s<sten_size; s++) {
           inds = ll*(nz+2*hs)*(nx+2*hs) + (k+s)*(nx+2*hs) + i+hs;
           stencil[s] = state[inds];
@@ -348,9 +352,10 @@ void compute_tendencies_z( double *state , double *flux , double *tend ) {
   }
 
   //Use the fluxes to compute tendencies for each cell
-  #pragma acc parallel loop
-    copy(tend[0 : NUM_VARS*nz*nx])
-    copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
+  #pragma acc parallel loop                            \
+    copy(tend[0 : NUM_VARS*nz*nx])                     \
+    copy(flux[0 : (nx+1)*(nz+1)*NUM_VARS])             \
+    copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
   for (ll=0; ll<NUM_VARS; ll++) {
     #pragma acc loop
     for (k=0; k<nz; k++) {
@@ -381,9 +386,9 @@ void set_halo_values_x( double *state ) {
   ierr = MPI_Irecv(recvbuf_r,hs*nz*NUM_VARS,MPI_DOUBLE,right_rank,1,MPI_COMM_WORLD,&req_r[1]);
 
   //Pack the send buffers
-  #pragma acc parallel loop
-    copy(state[hs*(nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    copy(sendbuf_l[0 : hs*nz*NUM_VARS])
+  #pragma acc parallel loop                            \
+    copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])      \
+    copy(sendbuf_l[0 : hs*nz*NUM_VARS])                \
     copy(sendbuf_r[0 : hs*nz*NUM_VARS])
   for (ll=0; ll<NUM_VARS; ll++) {
     #pragma acc loop
@@ -406,9 +411,9 @@ void set_halo_values_x( double *state ) {
 
 
   //Unpack the receive buffers
-  #pragma acc parallel loop
-    copy(state[hs*(nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    copy(recvbuf_l[0 : hs*nz*NUM_VARS])
+  #pragma acc parallel loop                            \
+    copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])      \
+    copy(recvbuf_l[0 : hs*nz*NUM_VARS])                \
     copy(recvbuf_r[0 : hs*nz*NUM_VARS])
   for (ll=0; ll<NUM_VARS; ll++) {
     #pragma acc loop
@@ -426,9 +431,9 @@ void set_halo_values_x( double *state ) {
 
   if (data_spec_int == DATA_SPEC_INJECTION) {
     if (myrank == 0) {
-      #pragma acc parallel loop
-        copy(state[hs*(nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-        copy(hy_dens_cell[hs : nz+hs])
+      #pragma acc parallel loop                            \
+        copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])      \
+        copy(hy_dens_cell[hs : nz+hs])                     \
         copy(hy_dens_theta_cell[hs : nz+hs])
       for (k=0; k<nz; k++) {
         #pragma acc loop
@@ -455,7 +460,7 @@ void set_halo_values_z( double *state ) {
   const double mnt_width = xlen/8;
   double       x, xloc, mnt_deriv;
 
-  #pragma acc parallel loop
+  #pragma acc parallel loop                             \
     copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
   for (ll=0; ll<NUM_VARS; ll++) {
     #pragma acc loop

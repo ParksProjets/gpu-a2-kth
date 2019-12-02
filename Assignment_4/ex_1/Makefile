@@ -1,5 +1,8 @@
+STAGE ?= 0
+
 CXX = pgc++
-SRC = $(wildcard src/*.cpp)
+SRC = $(wildcard src/stage$(STAGE)*.cpp)
+
 OBJ = $(SRC:.cpp=.o)
 BIN = ./bin
 TARGET = miniWeahter
