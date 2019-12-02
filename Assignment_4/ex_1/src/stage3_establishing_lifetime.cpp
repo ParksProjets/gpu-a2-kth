@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
   //So, you'll want to have nx_glob be twice as large as nz_glob
   nx_glob = 400;      //Number of total cells in the x-dirction
   nz_glob = 200;      //Number of total cells in the z-dirction
-  sim_time = 1500;     //How many seconds to run the simulation
+  sim_time = 100;     //How many seconds to run the simulation
   output_freq = 10;   //How frequently to output data to file (in seconds)
   //Model setup: DATA_SPEC_THERMAL or DATA_SPEC_COLLISION
   data_spec_int = DATA_SPEC_INJECTION;
@@ -142,25 +142,25 @@ int main(int argc, char **argv) {
   ////////////////////////////////////////////////////
   // MAIN TIME STEP LOOP
   ////////////////////////////////////////////////////
-
-  #pragma acc data
-    create(state_tmp[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    create(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
-    create(tend[0 : NUM_VARS*nz*nx])
-    copyin(hy_dens_cell[hs : nz+hs])
-    copyin(hy_dens_theta_cell[hs : nz+hs])
+  #pragma acc data                                          \
+    create(flux[0 : (nx+1)*(nz+1)*NUM_VARS])                \
+    create(tend[0 : NUM_VARS*nz*nx])                        \
+    copyin(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])         \
+    copyin(state_tmp[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])     \
+    create(recvbuf_l[0 : hs*nz*NUM_VARS])                   \
+    create(recvbuf_r[0 : hs*nz*NUM_VARS])                   \
+    create(sendbuf_l[0 : hs*nz*NUM_VARS])                   \
+    create(sendbuf_r[0 : hs*nz*NUM_VARS])                   \
+    copyin(hy_dens_cell[0 : nz+2*hs])                       \
+    copyin(hy_dens_theta_cell[0 : nz+2*hs])                 \
+    copyin(hy_dens_theta_int[0 : nz+1])                     \
+    copyin(hy_pressure_int[0 : nz+1])
 
   while (etime < sim_time) {
     //If the time step leads to exceeding the simulation time, shorten it for the last step
     if (etime + dt > sim_time) { dt = sim_time - etime; }
-  
-    #pragma acc data
-      copy(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    {
-      //Perform a single time step
-      perform_timestep(state,state_tmp,flux,tend,dt);
-    }
-    
+    //Perform a single time step
+    perform_timestep(state,state_tmp,flux,tend,dt);
     //Inform the user
     if (masterproc) { printf( "Elapsed Time: %lf / %lf\n", etime , sim_time ); }
     //Update the elapsed time and output counter
@@ -168,6 +168,7 @@ int main(int argc, char **argv) {
     output_counter = output_counter + dt;
     //If it's time for output, reset the counter, and do output
     if (output_counter >= output_freq) {
+      #pragma acc update host(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
       output_counter = output_counter - output_freq;
       output(state,etime);
     }
@@ -227,14 +228,12 @@ void semi_discrete_step( double *state_init , double *state_forcing , double *st
   }
 
   //Apply the tendencies to the fluid state
-  #pragma acc parallel loop
-    present(state_init, state_out)
+  #pragma acc parallel loop collapse(3)     \
+    present(state_init, state_out)          \
     copyin(tend[0 : NUM_VARS*nz*nx])
 
   for (ll=0; ll<NUM_VARS; ll++) {
-    #pragma acc loop
     for (k=0; k<nz; k++) {
-      #pragma acc loop
       for (i=0; i<nx; i++) {
         inds = ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + i+hs;
         indt = ll*nz*nx + k*nx + i;
@@ -256,18 +255,16 @@ void compute_tendencies_x( double *state , double *flux , double *tend ) {
   hv_coef = -hv_beta * dx / (16*dt);
 
   //Compute fluxes in the x-direction for each cell
-  #pragma acc parallel loop
-    present(state)
-    copyout(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
+  #pragma acc parallel loop collapse(2)                      \
+    present(flux, state, hy_dens_cell, hy_dens_theta_cell)   \
+    private(stencil, d3_vals, vals)
   for (k=0; k<nz; k++) {
-    #pragma acc loop
     for (i=0; i<nx+1; i++) {
-      //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
 
-      // This loop need to be caclulated completely before running the following code.
-      // TODO.
-      // #pragma acc parallel loop
+      //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
+      #pragma acc loop
       for (ll=0; ll<NUM_VARS; ll++) {
+        #pragma acc loop
         for (s=0; s < sten_size; s++) {
           inds = ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + i+s;
           stencil[s] = state[inds];
@@ -294,13 +291,10 @@ void compute_tendencies_x( double *state , double *flux , double *tend ) {
   }
 
   //Use the fluxes to compute tendencies for each cell
-  #pragma acc parallel loop
-    copyout(tend[0 : NUM_VARS*nz*nx])
-    copyin(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
+  #pragma acc parallel loop collapse(3)         \
+    present(tend, flux)
   for (ll=0; ll<NUM_VARS; ll++) {
-    #pragma acc loop
     for (k=0; k<nz; k++) {
-      #pragma acc loop
       for (i=0; i<nx; i++) {
         indt  = ll* nz   * nx    + k* nx    + i  ;
         indf1 = ll*(nz+1)*(nx+1) + k*(nx+1) + i  ;
@@ -323,17 +317,16 @@ void compute_tendencies_z( double *state , double *flux , double *tend ) {
   hv_coef = -hv_beta * dx / (16*dt);
 
   //Compute fluxes in the x-direction for each cell
-  #pragma acc parallel loop
-    copyin(state[hs*(nx+2*hs) : NUM_VARS*(nz+2*hs)*(nx+2*hs)])
-    copyout(flux[0 : (nx+1)*(nz+1)*NUM_VARS])
+  #pragma acc parallel loop collapse(2)                        \
+    private(stencil, d3_vals, vals)                            \
+    present(state, flux, hy_dens_theta_int, hy_pressure_int)
   for (k=0; k<nz+1; k++) {
-    #pragma acc loop
     for (i=0; i<nx; i++) {
       //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
 
-      // TODO.
-      // #pragma acc parallel loop
+      #pragma acc loop
       for (ll=0; ll<NUM_VARS; ll++) {
+        #pragma acc loop
         for (s=0; s<sten_size; s++) {
           inds = ll*(nz+2*hs)*(nx+2*hs) + (k+s)*(nx+2*hs) + i+hs;
           stencil[s] = state[inds];
@@ -360,12 +353,10 @@ void compute_tendencies_z( double *state , double *flux , double *tend ) {
   }
 
   //Use the fluxes to compute tendencies for each cell
-  #pragma acc parallel loop
+  #pragma acc parallel loop collapse(3)     \
     present(tend, flux, state)
   for (ll=0; ll<NUM_VARS; ll++) {
-    #pragma acc loop
     for (k=0; k<nz; k++) {
-      #pragma acc loop
       for (i=0; i<nx; i++) {
         indt  = ll* nz   * nx    + k* nx    + i  ;
         indf1 = ll*(nz+1)*(nx+1) + (k  )*(nx+1) + i;
@@ -392,14 +383,10 @@ void set_halo_values_x( double *state ) {
   ierr = MPI_Irecv(recvbuf_r,hs*nz*NUM_VARS,MPI_DOUBLE,right_rank,1,MPI_COMM_WORLD,&req_r[1]);
 
   //Pack the send buffers
-  #pragma acc parallel loop
-    present(state)
-    copyout(sendbuf_l[0 : hs*nz*NUM_VARS])
-    copyout(sendbuf_r[0 : hs*nz*NUM_VARS])
+  #pragma acc parallel loop collapse(3)          \
+    present(state, sendbuf_l, sendbuf_r)
   for (ll=0; ll<NUM_VARS; ll++) {
-    #pragma acc loop
     for (k=0; k<nz; k++) {
-      #pragma acc loop
       for (s=0; s<hs; s++) {
         sendbuf_l[ll*nz*hs + k*hs + s] = state[ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + hs+s];
         sendbuf_r[ll*nz*hs + k*hs + s] = state[ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + nx+s];
@@ -407,6 +394,8 @@ void set_halo_values_x( double *state ) {
     }
   }
 
+  #pragma acc update host(sendbuf_l[0 : hs*nz*NUM_VARS])
+  #pragma acc update host(sendbuf_l[0 : hs*nz*NUM_VARS])
 
   //Fire off the sends
   ierr = MPI_Isend(sendbuf_l,hs*nz*NUM_VARS,MPI_DOUBLE, left_rank,1,MPI_COMM_WORLD,&req_s[0]);
@@ -415,16 +404,15 @@ void set_halo_values_x( double *state ) {
   //Wait for receives to finish
   ierr = MPI_Waitall(2,req_r,MPI_STATUSES_IGNORE);
 
+  #pragma acc update device(recvbuf_l[0 : hs*nz*NUM_VARS])
+  #pragma acc update device(recvbuf_r[0 : hs*nz*NUM_VARS])
+
 
   //Unpack the receive buffers
-  #pragma acc parallel loop
-    present(state)
-    copyin(recvbuf_l[0 : hs*nz*NUM_VARS])
-    copyin(recvbuf_r[0 : hs*nz*NUM_VARS])
+  #pragma acc parallel loop collapse(3)         \
+    present(state, recvbuf_l, recvbuf_r)
   for (ll=0; ll<NUM_VARS; ll++) {
-    #pragma acc loop
     for (k=0; k<nz; k++) {
-      #pragma acc loop
       for (s=0; s<hs; s++) {
         state[ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + s      ] = recvbuf_l[ll*nz*hs + k*hs + s];
         state[ll*(nz+2*hs)*(nx+2*hs) + (k+hs)*(nx+2*hs) + nx+hs+s] = recvbuf_r[ll*nz*hs + k*hs + s];
@@ -437,10 +425,9 @@ void set_halo_values_x( double *state ) {
 
   if (data_spec_int == DATA_SPEC_INJECTION) {
     if (myrank == 0) {
-      #pragma acc parallel loop
+      #pragma acc parallel loop collapse(2)                \
         present(state, hy_dens_cell, hy_dens_theta_cell)
       for (k=0; k<nz; k++) {
-        #pragma acc loop
         for (i=0; i<hs; i++) {
           z = (k_beg + k+0.5)*dz;
           if (abs(z-3*zlen/4) <= zlen/16) {
@@ -464,10 +451,9 @@ void set_halo_values_z( double *state ) {
   const double mnt_width = xlen/8;
   double       x, xloc, mnt_deriv;
 
-  #pragma acc parallel loop
+  #pragma acc parallel loop collapse(2)              \
     present(state)
   for (ll=0; ll<NUM_VARS; ll++) {
-    #pragma acc loop
     for (i=0; i<nx+2*hs; i++) {
       if (ll == ID_WMOM) {
         state[ll*(nz+2*hs)*(nx+2*hs) + (0      )*(nx+2*hs) + i] = 0.;
