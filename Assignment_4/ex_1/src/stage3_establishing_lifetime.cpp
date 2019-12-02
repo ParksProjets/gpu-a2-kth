@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
   //So, you'll want to have nx_glob be twice as large as nz_glob
   nx_glob = 400;      //Number of total cells in the x-dirction
   nz_glob = 200;      //Number of total cells in the z-dirction
-  sim_time = 100;     //How many seconds to run the simulation
+  sim_time = 500;     //How many seconds to run the simulation
   output_freq = 10;   //How frequently to output data to file (in seconds)
   //Model setup: DATA_SPEC_THERMAL or DATA_SPEC_COLLISION
   data_spec_int = DATA_SPEC_INJECTION;
@@ -154,6 +154,7 @@ int main(int argc, char **argv) {
     copyin(hy_dens_cell[0 : nz+2*hs])                       \
     copyin(hy_dens_theta_cell[0 : nz+2*hs])                 \
     copyin(hy_dens_theta_int[0 : nz+1])                     \
+    copyin(hy_dens_int[0 : nz+1])                           \
     copyin(hy_pressure_int[0 : nz+1])
 
   while (etime < sim_time) {
@@ -229,8 +230,7 @@ void semi_discrete_step( double *state_init , double *state_forcing , double *st
 
   //Apply the tendencies to the fluid state
   #pragma acc parallel loop collapse(3)     \
-    present(state_init, state_out)          \
-    copyin(tend[0 : NUM_VARS*nz*nx])
+    present(state_init, state_out, tend)
 
   for (ll=0; ll<NUM_VARS; ll++) {
     for (k=0; k<nz; k++) {
@@ -317,9 +317,9 @@ void compute_tendencies_z( double *state , double *flux , double *tend ) {
   hv_coef = -hv_beta * dx / (16*dt);
 
   //Compute fluxes in the x-direction for each cell
-  #pragma acc parallel loop collapse(2)                        \
-    private(stencil, d3_vals, vals)                            \
-    present(state, flux, hy_dens_theta_int, hy_pressure_int)
+  #pragma acc parallel loop collapse(2)                                      \
+    private(stencil, d3_vals, vals)                                          \
+    present(state, flux, hy_dens_theta_int, hy_pressure_int, hy_dens_int)
   for (k=0; k<nz+1; k++) {
     for (i=0; i<nx; i++) {
       //Use fourth-order interpolation from four cell averages to compute the value at the interface in question
@@ -395,7 +395,7 @@ void set_halo_values_x( double *state ) {
   }
 
   #pragma acc update host(sendbuf_l[0 : hs*nz*NUM_VARS])
-  #pragma acc update host(sendbuf_l[0 : hs*nz*NUM_VARS])
+  #pragma acc update host(sendbuf_r[0 : hs*nz*NUM_VARS])
 
   //Fire off the sends
   ierr = MPI_Isend(sendbuf_l,hs*nz*NUM_VARS,MPI_DOUBLE, left_rank,1,MPI_COMM_WORLD,&req_s[0]);

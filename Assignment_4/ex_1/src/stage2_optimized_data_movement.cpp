@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
   //So, you'll want to have nx_glob be twice as large as nz_glob
   nx_glob = 400;      //Number of total cells in the x-dirction
   nz_glob = 200;      //Number of total cells in the z-dirction
-  sim_time = 100;     //How many seconds to run the simulation
+  sim_time = 500;     //How many seconds to run the simulation
   output_freq = 10;   //How frequently to output data to file (in seconds)
   //Model setup: DATA_SPEC_THERMAL or DATA_SPEC_COLLISION
   data_spec_int = DATA_SPEC_INJECTION;
@@ -309,9 +309,10 @@ void compute_tendencies_z( double *state , double *flux , double *tend ) {
   //Compute fluxes in the x-direction for each cell
   #pragma acc parallel loop collapse(2)               \
     private(stencil, d3_vals, vals)                   \
-    copyin(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])     \
-    copyout(flux[0 : (nx+1)*(nz+1)*NUM_VARS])            \
-    copyin(hy_dens_theta_int[0 : nz+1])                 \
+    copyin(state[0 : NUM_VARS*(nz+2*hs)*(nx+2*hs)])   \
+    copyout(flux[0 : (nx+1)*(nz+1)*NUM_VARS])         \
+    copyin(hy_dens_theta_int[0 : nz+1])               \
+    copyin(hy_dens_int[0 : nz+1])                     \
     copyin(hy_pressure_int[0 : nz+1])
   for (k=0; k<nz+1; k++) {
     for (i=0; i<nx; i++) {
